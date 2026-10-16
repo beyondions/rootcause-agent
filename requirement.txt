@@ -1,3 +1,0 @@
-falkordb
-groq
-python-dotenv

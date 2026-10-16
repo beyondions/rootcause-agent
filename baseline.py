@@ -1,16 +1,8 @@
-"""
-baseline.py: plain vector-RAG baseline, for comparison with the graph agent.
-
-Same data as the graph, but stored as flat text documents.
-Retrieval = TF-IDF vector similarity (top-k). The LLM answers ONLY from the
-retrieved text: no graph, no tools, no multi-hop traversal.
-"""
 import math
 import os
 import re
 import sys
 from collections import Counter
-from tokenize import tokenize
 
 from dotenv import load_dotenv
 from groq import Groq
@@ -19,6 +11,8 @@ from load_data import (SERVICES, DEPENDS_ON, TEAMS, ENGINEERS,
                        DEPLOYS, ALERTS, PAST_INCIDENTS)
 
 load_dotenv()
+if not os.getenv("GROQ_API_KEY"):
+    sys.exit("GROQ_API_KEY is not set.")
 client = Groq(api_key=os.environ["GROQ_API_KEY"])
 MODEL = "openai/gpt-oss-120b"
 TOP_K = 8
@@ -29,7 +23,6 @@ def clock(minutes):
     return f"{(h % 12) or 12}:{m:02d} {'AM' if h < 12 else 'PM'}"
 
 
-# ---------------- 1. Turn the same data into text documents ----------------
 
 def build_documents():
     docs = []
@@ -95,7 +88,6 @@ class VectorIndex:
 INDEX = VectorIndex(build_documents())
 
 def baseline_answer(question):
-    # A realistic RAG bot searches with the question PLUS the current alerts.
     alert_text = " ".join(f"{svc} {msg}" for _, svc, msg, _, _ in ALERTS)
     retrieved = INDEX.search(f"{question} {alert_text}", k=TOP_K)
 

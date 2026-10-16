@@ -1,14 +1,21 @@
+import os
+
+from dotenv import load_dotenv
 from falkordb import FalkorDB
 
-GRAPH_NAME = "incidents"
-NOW = 121 
+load_dotenv()
 
-client = FalkorDB(host="localhost", port=6379)
+GRAPH_NAME = os.getenv("FALKORDB_GRAPH", "incidents")
+NOW = 121
+
+client = FalkorDB(host=os.getenv("FALKORDB_HOST", "localhost"),
+                  port=int(os.getenv("FALKORDB_PORT", "6379")),
+                  username=os.getenv("FALKORDB_USERNAME") or None,
+                  password=os.getenv("FALKORDB_PASSWORD") or None)
 graph = client.select_graph(GRAPH_NAME)
 
 
 def q(query, params, cols):
-    """Run a read-only query and return a list of dicts."""
     rows = graph.ro_query(query, params).result_set
     return [dict(zip(cols, row)) for row in rows]
 
@@ -20,7 +27,6 @@ def get_active_alerts():
     """, {}, ["id", "service", "message", "severity", "fired_at"])
 
 def _downstream(service):
-    """Everything this service depends on, at any depth."""
     rows = graph.ro_query("""
         MATCH (:Service {name: $s})-[:DEPENDS_ON*1..]->(x:Service)
         RETURN DISTINCT x.name
@@ -29,7 +35,6 @@ def _downstream(service):
 
 
 def _upstream(service):
-    """Everything that depends on this service, at any depth."""
     rows = graph.ro_query("""
         MATCH (:Service {name: $s})<-[:DEPENDS_ON*1..]-(x:Service)
         RETURN DISTINCT x.name
@@ -38,13 +43,6 @@ def _upstream(service):
 
 
 def find_root_cause():
-    """
-    Rule:
-      - A service is a VICTIM if something it depends on is also alerting.
-      - Otherwise it's a CANDIDATE root cause.
-      - Rank candidates by how many alerting services depend on them,
-        then by whether they had a recent deploy.
-    """
     alerting = {a["service"] for a in get_active_alerts()}
     candidates = []
     for svc in alerting:
@@ -58,8 +56,7 @@ def find_root_cause():
             "recent_deploys": get_recent_deploys(svc),
         })
     candidates.sort(
-        key=lambda c: (c["explains_count"], len(c["recent_deploys"])),
-        reverse=True,
+        key=lambda c: (-c["explains_count"], -len(c["recent_deploys"]), c["service"]),
     )
     return candidates
 

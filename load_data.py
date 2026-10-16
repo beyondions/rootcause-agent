@@ -1,9 +1,17 @@
+import os
 import sys
+
+from dotenv import load_dotenv
 from falkordb import FalkorDB
 
-GRAPH_NAME = "incidents"
+load_dotenv()
 
-client = FalkorDB(host="localhost", port=6379)
+GRAPH_NAME = os.getenv("FALKORDB_GRAPH", "incidents")
+
+client = FalkorDB(host=os.getenv("FALKORDB_HOST", "localhost"),
+                  port=int(os.getenv("FALKORDB_PORT", "6379")),
+                  username=os.getenv("FALKORDB_USERNAME") or None,
+                  password=os.getenv("FALKORDB_PASSWORD") or None)
 graph = client.select_graph(GRAPH_NAME)
 
 
@@ -74,11 +82,11 @@ ENGINEERS = [
 ]
 
 DEPLOYS = [
-    ("D-1", "cache", "Config change: maxmemory lowered", 110, "Arjun"),  # REAL CAUSE
-    ("D-5", "search", "Index mapping update", 95, "Rohan"),              # red herring
-    ("D-2", "recommendation", "Model refresh", 60, "Sana"),              # red herring
-    ("D-3", "frontend", "Banner text update", 30, "Rohan"),              # red herring
-    ("D-4", "shipping", "Quote timeout tweak", 5, "Dev"),                # old
+    ("D-1", "cache", "Config change: maxmemory lowered", 110, "Arjun"),
+    ("D-5", "search", "Index mapping update", 95, "Rohan"),
+    ("D-2", "recommendation", "Model refresh", 60, "Sana"),
+    ("D-3", "frontend", "Banner text update", 30, "Rohan"),
+    ("D-4", "shipping", "Quote timeout tweak", 5, "Dev"),
 ]
 
 ALERTS = [
@@ -88,7 +96,7 @@ ALERTS = [
     ("A-4", "payment", "Payment slow", "high", 118),
     ("A-5", "cart", "Cart slow", "high", 117),
     ("A-6", "cache", "Cache latency high", "warning", 115),
-    ("A-7", "recommendation", "High CPU", "warning", 100),              # noise
+    ("A-7", "recommendation", "High CPU", "warning", 100),
 ]
 
 PAST_INCIDENTS = [
@@ -242,7 +250,7 @@ if __name__ == "__main__":
             graph.delete()
             print(f"Deleted graph '{GRAPH_NAME}'")
         except Exception:
-            pass  # graph didn't exist yet
+            pass
         graph = client.select_graph(GRAPH_NAME)
 
     load_services()

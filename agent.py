@@ -10,9 +10,10 @@ from groq import Groq, RateLimitError
 import tools
 
 load_dotenv()
+if not os.getenv("GROQ_API_KEY"):
+    sys.exit("GROQ_API_KEY is not set")
 client = Groq(api_key=os.environ["GROQ_API_KEY"])
 MODEL = "openai/gpt-oss-120b"
-# MODEL = "openai/gpt-oss-20b"
 
 MAX_STEPS = 12
 
@@ -50,13 +51,11 @@ Incident: <incident id>
 Red herring: <other candidate and why the graph ruled it out>  (only if one exists)"""
 
 def find_similar_incidents(service):
-    """Only resolved past incidents count as history."""
     return [i for i in tools.find_similar_incidents(service)
             if i.get("resolved_by") or i.get("runbook")]
 
 
 def find_people_to_contact(service):
-    """Owner team + who made the recent change + who fixed it last time."""
     people = {}
 
     def add(name, reason):
@@ -142,7 +141,6 @@ def run_tool(name, args):
 
 
 def call_llm(messages, retries=4):
-    """Call Groq; on rate limit, wait and retry."""
     for attempt in range(retries):
         try:
             return client.chat.completions.create(
@@ -157,7 +155,6 @@ def call_llm(messages, retries=4):
 
 
 def summarize(trace):
-    """Pull the key facts out of the tool results, for the UI."""
     out = {"root_cause": None, "evidence_path": [], "blast_radius": [], "incident_id": None}
     for step in trace:
         r = step["result"]
@@ -173,7 +170,6 @@ def summarize(trace):
 
 
 def first_line_rule(question):
-    """Decide the first-line format in code instead of trusting the LLM."""
     words = question.strip().lower().split()
     first = words[0] if words else ""
     if first in {"who", "whom"}:
@@ -187,7 +183,6 @@ _service_names = None
 
 
 def service_names():
-    """All service names in the graph, longest first (so 'api-gateway' matches before 'ad')."""
     global _service_names
     if _service_names is None:
         rows = tools.graph.ro_query("MATCH (s:Service) RETURN s.name").result_set
@@ -196,7 +191,6 @@ def service_names():
 
 
 def fix_yes_no(question, result):
-    """For 'Is X causing...?' questions, decide Yes/No from the graph, not the LLM."""
     words = question.strip().lower().split()
     root = result.get("root_cause")
     if not words or words[0] not in YES_NO_WORDS or not root:
@@ -214,7 +208,6 @@ def fix_yes_no(question, result):
     return result
 
 def _investigate(question, verbose=True):
-    """The raw agent loop."""
     _created.clear()
     messages = [{"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": f"{question}\n\n({first_line_rule(question)})"}]
@@ -227,7 +220,6 @@ def _investigate(question, verbose=True):
         if not msg.tool_calls:
             content = (msg.content or "").strip()
 
-            # Safety net: did the agent finish the required steps?
             missing = []
             if not any(s["tool"] == "get_evidence_path" and s["result"] for s in trace):
                 missing.append("get_evidence_path")
@@ -269,8 +261,6 @@ def _investigate(question, verbose=True):
 
 
 def investigate(question, verbose=True):
-    """Run the agent. Returns a dict: answer, trace, root_cause, evidence_path,
-    blast_radius, incident_id."""
     return fix_yes_no(question, _investigate(question, verbose))
 
 TESTS = [
@@ -307,7 +297,7 @@ def run_tests():
         for name, value in checks.items():
             print(f"  {'✓' if value else '✗'} {name}")
         cleanup_open_incidents()
-        time.sleep(3)   # be gentle with the free-tier rate limit
+        time.sleep(3)
     print(f"\n{passed}/{len(TESTS)} tests passed")
 
 def print_result(result):

@@ -6,7 +6,6 @@ from baseline import baseline_answer
 
 
 def build_answer_key():
-    """Read the correct answers from the graph, so nothing is hard-coded."""
     root = tools.find_root_cause()[0]["service"]
     deploys = tools.get_recent_deploys(root)
     people = [p["name"] for p in find_people_to_contact(root)]
@@ -74,7 +73,7 @@ def run():
         g = investigate(question, verbose=False)
         time.sleep(3)
         b = baseline_answer(question)
-        b_result = {"incident_id": None}          # RAG cannot take actions
+        b_result = {"incident_id": None}
         time.sleep(3)
 
         for label, check in checks:
