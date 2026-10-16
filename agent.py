@@ -10,6 +10,8 @@ from groq import Groq
 import tools
 from llm import chat
 
+LOADED_AT = time.time()
+
 load_dotenv()
 if not os.getenv("GROQ_API_KEY"):
     sys.exit("GROQ_API_KEY is not set")
@@ -235,7 +237,7 @@ def fallback_answer(trace):
 def finish(trace, content, stats):
     result = {"answer": content, "trace": trace, **summarize(trace), "fallback": False,
               "model": stats["model"], "tokens": stats["tokens"],
-              "llm_calls": stats["calls"], "cached": False}
+              "llm_calls": stats["calls"], "cached": False, "mode": "outage"}
     if not content:
         result["answer"] = fallback_answer(trace) or "Stopped: the model gave no answer."
         result["fallback"] = True
@@ -443,12 +445,108 @@ def _investigate(question, verbose=True):
     return finish(trace, "", stats)
 
 
+def named_services(question):
+    low = question.lower()
+    found = []
+    for name in service_names():
+        match = re.search(rf"(?<![\w-]){re.escape(name)}(?![\w-])", low)
+        if match:
+            found.append((match.start(), name))
+    return [name for _, name in sorted(found)]
+
+
+GRAPH_LOOKUP_MODEL = "none (graph lookup)"
+
+
+def check_service(svc, root, alert_by_service, trace):
+    owners = tools.find_owner(svc)
+    dependencies = sorted(tools._downstream(svc))
+    trace.append({"tool": "find_owner", "args": {"service": svc}, "result": owners,
+                  "called_by": "code"})
+    trace.append({"tool": "dependencies", "args": {"service": svc}, "result": dependencies,
+                  "called_by": "code"})
+    return {
+        "service": svc,
+        "alerting": False,
+        "at_risk": bool(root) and root in dependencies,
+        "dependencies": dependencies,
+        "alerting_dependencies": [
+            {"service": d, "severity": alert_by_service[d]["severity"],
+             "message": alert_by_service[d]["message"]}
+            for d in dependencies if d in alert_by_service],
+        "team": owners[0]["team"] if owners else None,
+        "engineers": owners[0]["engineers"] if owners else [],
+    }
+
+
+def status_sentence(c, root):
+    if c["at_risk"]:
+        return f"{c['service']} has no active alerts but depends on {root}, so it's at risk."
+    if c["alerting_dependencies"]:
+        return (f"{c['service']} has no active alerts, but its dependency "
+                f"{c['alerting_dependencies'][0]['service']} does.")
+    return f"{c['service']} has no active alerts — not part of the current incident."
+
+
+def dependency_sentence(c):
+    if c["alerting_dependencies"]:
+        return " ".join(f"Its dependency {d['service']} is alerting ({d['severity']}: {d['message']})."
+                        for d in c["alerting_dependencies"])
+    if c["dependencies"]:
+        return (f"No alerts on {c['service']} or its dependencies ({', '.join(c['dependencies'])}): "
+                "if it's failing, it may be a monitoring gap.")
+    return (f"No alerts on {c['service']}, and it has no dependencies: "
+            "if it's failing, it may be a monitoring gap.")
+
+
+def service_check(question, named, alerts, verbose=True):
+    alert_by_service = {}
+    for a in alerts:
+        alert_by_service.setdefault(a["service"], a)
+    trace = [{"tool": "get_active_alerts", "args": {}, "result": alerts, "called_by": "code"}]
+    candidates = tools.find_root_cause()
+    trace.append({"tool": "find_root_cause", "args": {}, "result": candidates, "called_by": "code"})
+    root = candidates[0]["service"] if candidates else None
+    deploy = candidates[0]["recent_deploys"][0] if candidates and candidates[0]["recent_deploys"] else None
+    checks = [check_service(svc, root, alert_by_service, trace) for svc in named]
+
+    contacts = "; ".join(f"{', '.join(c['engineers'])} ({c['team']}, owns {c['service']})"
+                         for c in checks if c["engineers"])
+    lines = [" ".join(status_sentence(c, root) for c in checks),
+             " ".join(dependency_sentence(c) for c in checks),
+             f"Contact: {contacts}" if contacts else "Contact: no owner found in the graph."]
+    if root:
+        safe = [c["service"] for c in checks if not c["at_risk"]]
+        risky = [c["service"] for c in checks if c["at_risk"]]
+        effects = []
+        if safe:
+            effects.append(f"does not affect {', '.join(safe)}")
+        if risky:
+            effects.append(f"{', '.join(risky)} depend{'s' if len(risky) == 1 else ''} on it, at risk")
+        change = f" ({deploy['id']}: {deploy['change']}, by {deploy['author']})" if deploy else ""
+        lines.append(f"Active incident elsewhere: {root}{change} — {'; '.join(effects)}.")
+    else:
+        lines.append("No active incident: no alerts are firing.")
+
+    return {"answer": "\n".join(lines), "trace": trace, "root_cause": None,
+            "active_incident": {"root_cause": root, "deploy": deploy["id"] if deploy else None},
+            "evidence_path": [], "blast_radius": [], "incident_id": None, "fallback": False,
+            "model": GRAPH_LOOKUP_MODEL, "tokens": 0, "llm_calls": 0,
+            "cached": False, "mode": "service_check", "service_checks": checks}
+
+
 def investigate(question, verbose=True):
-    result = fix_yes_no(question, _investigate(question, verbose))
-    result = fix_first_line(question, result)
-    result = fix_suggested_fix(result)
+    _created.clear()
+    alerts = tools.get_active_alerts()
+    named = named_services(question)
+    if named and not {a["service"] for a in alerts} & set(named):
+        result = service_check(question, named, alerts, verbose)
+    else:
+        result = fix_yes_no(question, _investigate(question, verbose))
+        result = fix_first_line(question, result)
+        result = fix_suggested_fix(result)
     print(f"  (tokens: {result['tokens']}, llm calls: {result['llm_calls']}, "
-          f"model: {result['model']})")
+          f"model: {result['model']}, mode: {result['mode']})")
     return result
 
 
@@ -464,7 +562,7 @@ def ask(question):
     hit = _answer_cache.get(key)
     if hit and time.time() - hit[0] < CACHE_SECONDS:
         print("  (cached answer, 0 tokens)")
-        return {**hit[1], "tokens": 0, "llm_calls": 0, "cached": True}
+        return {**hit[1], "tokens": 0, "llm_calls": 0, "cached": True, "answered_at": hit[0]}
     result = investigate(question)
     if not result["fallback"]:
         _answer_cache[key] = (time.time(), result)
@@ -482,24 +580,77 @@ TESTS = [
                and not a.lower().startswith("no")),
 ]
 
+SERVICE_CHECK_TESTS = [
+    "auth is not working. who is responsible for that?",
+    "Is postgres healthy?",
+    "accounting is down. who owns it?",
+]
+
+BLAME_CLAIM = re.compile(r"\b(is|are) (down|affected|failing|broken|impacted)\b|\baffects\b"
+                         r"|\bcaused by\b|\bis causing\b|\bbreaks\b")
+NEGATION = re.compile(r"\b(not|no|isn't|doesn't)\b")
+
+
+def blames_root(answer, root, named):
+    sentences = re.split(r"(?<=[.!?])\s+|\n", answer.lower())
+    return [s for s in sentences
+            if root in s and any(svc in s for svc in named)
+            and BLAME_CLAIM.search(s) and not NEGATION.search(s)]
+
 def cleanup_open_incidents():
     tools.graph.query("MATCH (i:Incident {status: 'open'}) DETACH DELETE i")
 
-def run_tests():
+def open_incident_count():
+    return tools.graph.ro_query(
+        "MATCH (i:Incident {status: 'open'}) RETURN count(i)").result_set[0][0]
+
+def outage_checks(result, check_first_line, runbook):
+    answer = result["answer"]
+    return {
+        "answer ok": bool(answer) and check_first_line(answer),
+        "root cause = cache": result["root_cause"] == "cache",
+        "one incident": result["incident_id"] is not None and len(_created) == 1,
+        "used tools": len(result["trace"]) >= 4,
+        "runbook from graph": runbook.lower() in answer.lower(),
+    }
+
+def service_check_checks(question, result):
+    answer = result["answer"]
+    lines = answer.splitlines()
+    first = lines[0].lower() if lines else ""
+    named = named_services(question)
+    candidates = tools.find_root_cause()
+    root = candidates[0]["service"] if candidates else None
+    engineers = [e for svc in named for owner in tools.find_owner(svc) for e in owner["engineers"]]
+    at_risk = any(root in tools._downstream(svc) for svc in named) if root else False
+    return {
+        "mode = service_check": result.get("mode") == "service_check",
+        "first line: no active alerts": "no active alerts" in first,
+        "owner engineers named": bool(engineers)
+                                 and all(e.lower() in answer.lower() for e in engineers),
+        "no incident created": result["incident_id"] is None and not _created
+                               and open_incident_count() == 0,
+        "root cause not blamed": result["root_cause"] is None
+                                 and not any(l.lower().startswith("root cause:") for l in lines)
+                                 and (at_risk or not root or root not in first),
+        "no sentence blames root": at_risk or not root or not blames_root(answer, root, named),
+        "no LLM call": result["llm_calls"] == 0 and result["tokens"] == 0,
+    }
+
+def run_tests(only=None):
     cleanup_open_incidents()
     runbook = expected_runbook()
+    cases = [(q, check) for q, check in TESTS] + [(q, None) for q in SERVICE_CHECK_TESTS]
+    selected = [(n, case) for n, case in enumerate(cases, 1) if not only or n in only]
     passed = 0
-    for question, check_first_line in TESTS:
-        print(f"\nQ: {question}")
+    for n, (question, check_first_line) in selected:
+        print(f"\nQ{n}: {question}")
         result = investigate(question, verbose=False)
         answer = result["answer"]
-        checks = {
-            "answer ok": bool(answer) and check_first_line(answer),
-            "root cause = cache": result["root_cause"] == "cache",
-            "one incident": result["incident_id"] is not None and len(_created) == 1,
-            "used tools": len(result["trace"]) >= 4,
-            "runbook from graph": runbook.lower() in answer.lower(),
-        }
+        if check_first_line is None:
+            checks = service_check_checks(question, result)
+        else:
+            checks = outage_checks(result, check_first_line, runbook)
         ok = all(checks.values())
         passed += ok
         print(f"  first line: {answer.splitlines()[0] if answer else '(empty)'}")
@@ -507,7 +658,7 @@ def run_tests():
             print(f"  {'✓' if value else '✗'} {name}")
         cleanup_open_incidents()
         time.sleep(3)
-    print(f"\n{passed}/{len(TESTS)} tests passed")
+    print(f"\n{passed}/{len(selected)} tests passed")
 
 def print_result(result):
     print("\n=== ANSWER ===\n")
@@ -543,7 +694,8 @@ def interactive():
 if __name__ == "__main__":
     tools.check_graph()
     if "--test" in sys.argv:
-        run_tests()
+        only = next((a.split("=", 1)[1] for a in sys.argv if a.startswith("--only=")), "")
+        run_tests({int(n) for n in only.split(",") if n})
     elif len(sys.argv) > 1:
         print_result(investigate(" ".join(sys.argv[1:])))
     else:
