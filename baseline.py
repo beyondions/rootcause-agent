@@ -7,6 +7,8 @@ from collections import Counter
 from dotenv import load_dotenv
 from groq import Groq
 
+from llm import chat
+
 from load_data import (SERVICES, DEPENDS_ON, TEAMS, ENGINEERS,
                        DEPLOYS, ALERTS, PAST_INCIDENTS)
 
@@ -14,7 +16,6 @@ load_dotenv()
 if not os.getenv("GROQ_API_KEY"):
     sys.exit("GROQ_API_KEY is not set.")
 client = Groq(api_key=os.environ["GROQ_API_KEY"])
-MODEL = "openai/gpt-oss-120b"
 TOP_K = 8
 
 
@@ -92,8 +93,8 @@ def baseline_answer(question):
     retrieved = INDEX.search(f"{question} {alert_text}", k=TOP_K)
 
     context = "\n".join(f"- {d}" for d in retrieved)
-    response = client.chat.completions.create(
-        model=MODEL,
+    response = chat(
+        client,
         temperature=0.3,
         messages=[
             {"role": "system", "content":

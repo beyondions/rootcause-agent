@@ -1,7 +1,8 @@
 import time
 
 import tools
-from agent import investigate, cleanup_open_incidents, find_people_to_contact
+from agent import (investigate, cleanup_open_incidents, find_people_to_contact,
+                   expected_runbook)
 from baseline import baseline_answer
 
 
@@ -15,9 +16,11 @@ def build_answer_key():
         "authors": [d["author"] for d in deploys],
         "blast": [b["service"] for b in tools.find_blast_radius(root)],
         "people": people,
+        "runbook": expected_runbook(),
     }
 
 
+tools.check_graph()
 KEY = build_answer_key()
 
 
@@ -42,6 +45,7 @@ QUESTIONS = [
         ("names root cause", has(KEY["root"])),
         ("names what changed (deploy)", has_any(*KEY["deploy_ids"])),
         ("takes action (opens incident)", incident_opened),
+        ("names the past fix (runbook)", has(KEY["runbook"])),
     ]),
     ("What changed recently that caused this?", [
         ("names the deploy", has_any(*KEY["deploy_ids"])),

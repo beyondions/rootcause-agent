@@ -1,4 +1,5 @@
 import os
+import sys
 
 from dotenv import load_dotenv
 from falkordb import FalkorDB
@@ -98,15 +99,35 @@ def get_evidence_path(from_service, to_service):
     return rows[0]["path"] if rows else []
 
 def create_incident(root_cause, title, summary):
+    if not q("MATCH (s:Service {name: $svc}) RETURN s.name", {"svc": root_cause}, ["name"]):
+        raise ValueError(f"unknown service: {root_cause}")
+    already_open = q("""
+        MATCH (i:Incident {status: 'open'})-[:CAUSED_BY]->(:Service {name: $svc})
+        RETURN i.id ORDER BY i.id LIMIT 1
+    """, {"svc": root_cause}, ["id"])
+    if already_open:
+        return already_open[0]["id"]
     result = graph.query("""
         MATCH (s:Service {name: $svc})
-        OPTIONAL MATCH (x:Incident) WITH s, count(x) AS n
-        CREATE (i:Incident {id: 'INC-' + toString(200 + n), name: 'INC-' + toString(200 + n),
+        OPTIONAL MATCH (x:Incident)
+        WITH s, max(toInteger(substring(x.id, 4))) AS top
+        WITH s, 'INC-' + toString(CASE WHEN top IS NULL OR top < 200 THEN 201 ELSE top + 1 END) AS new_id
+        CREATE (i:Incident {id: new_id, name: new_id,
                             title: $title, summary: $summary,
                             status: 'open', opened_at: $now})-[:CAUSED_BY]->(s)
         RETURN i.id
     """, {"svc": root_cause, "title": title, "summary": summary, "now": NOW})
     return result.result_set[0][0]
+
+
+def check_graph():
+    try:
+        count = graph.ro_query("MATCH (s:Service) RETURN count(s)").result_set[0][0]
+    except Exception as e:
+        sys.exit(f"Cannot read graph '{GRAPH_NAME}' ({e}). "
+                 "Is FalkorDB running? Then run: python load_data.py --reset")
+    if count == 0:
+        sys.exit(f"Graph '{GRAPH_NAME}' is empty. Run: python load_data.py --reset")
 
 
 if __name__ == "__main__":
