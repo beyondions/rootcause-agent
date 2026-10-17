@@ -34,7 +34,8 @@ header[data-testid="stHeader"], [data-testid="stToolbar"], footer, #MainMenu,
 
 .st-key-alerts, .st-key-graph, .st-key-diag, .st-key-askbar {
   background:var(--panel); border:1px solid var(--border); border-radius:14px; padding:14px 16px 10px; }
-.st-key-askbar { padding:12px 14px 4px; }
+.st-key-askbar { padding:12px 14px 4px; margin-bottom:6px; }
+.st-key-alerts, .st-key-graph, .st-key-diag { margin-bottom:18px; }
 [data-testid="stForm"] { border:none !important; padding:0 !important; }
 .stTextInput input { background:var(--panel2) !important; border-radius:10px !important;
   height:46px; font-size:15px; }
@@ -59,7 +60,7 @@ header[data-testid="stHeader"], [data-testid="stToolbar"], footer, #MainMenu,
 .pill b { color:var(--text); font-weight:600; }
 .dot { width:7px; height:7px; border-radius:50%; background:var(--green); box-shadow:0 0 0 3px var(--green-soft); }
 
-.kpis { display:grid; grid-template-columns:repeat(5, minmax(0,1fr)); gap:12px; margin:4px 0 2px; }
+.kpis { display:grid; grid-template-columns:repeat(5, minmax(0,1fr)); gap:16px; margin:6px 0 18px; }
 @media (max-width:1100px) { .kpis { grid-template-columns:repeat(2, minmax(0,1fr)); } }
 .kpi { background:var(--panel); border:1px solid var(--border); border-radius:14px; padding:12px 16px; min-width:0; }
 .kpi-label { color:var(--muted); font-size:11px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; }
@@ -78,7 +79,7 @@ header[data-testid="stHeader"], [data-testid="stToolbar"], footer, #MainMenu,
   border-radius:999px; font-size:11px; padding:2px 9px; font-weight:600; }
 
 .alert { display:flex; gap:10px; padding:7px 10px; border-radius:10px; background:var(--panel2);
-  border:1px solid transparent; margin-bottom:6px; }
+  border:1px solid transparent; margin-bottom:8px; }
 .alert.is-root { border-color:rgba(240,82,82,.55); background:linear-gradient(90deg, var(--red-soft), var(--panel2)); }
 .alert.is-ruled { opacity:.6; border-style:dashed; border-color:#3a4456; }
 .sev { width:4px; border-radius:4px; flex:none; }
@@ -157,7 +158,7 @@ header[data-testid="stHeader"], [data-testid="stToolbar"], footer, #MainMenu,
 .badge.amber { color:#fcd34d; background:var(--amber-soft); border-color:transparent; }
 .trace { list-style:none; padding:0; margin:0; counter-reset:t; }
 .trace li { counter-increment:t; display:flex; gap:10px; align-items:baseline; padding:7px 10px; border-radius:9px;
-  background:var(--panel); border:1px solid var(--border); margin-bottom:6px; font-size:12.5px; word-break:break-word; }
+  background:var(--panel); border:1px solid var(--border); margin-bottom:8px; font-size:12.5px; word-break:break-word; }
 .trace li:before { content:counter(t); color:var(--faint); font-family:var(--mono); font-size:11px; min-width:16px; }
 .trace code { font-family:var(--mono); color:#93c5fd; background:none; padding:0; }
 .trace .args { color:var(--muted); font-family:var(--mono); font-size:11.5px; }
@@ -629,7 +630,7 @@ tiers = dict(services)
 
 render(kpi_strip(alerts, result, tiers))
 
-col_alerts, col_graph, col_diag = st.columns([1.05, 2.35, 1.2], gap="small")
+col_alerts, col_graph, col_diag = st.columns([1.05, 2.35, 1.2], gap="medium")
 with col_alerts:
     with st.container(key="alerts"):
         render(alerts_panel(alerts, result))
