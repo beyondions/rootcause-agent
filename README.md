@@ -7,9 +7,8 @@ who to wake up and what fixed this last time, and opens an incident.
 Built for **Graph Hacks: Context for AI Agents** (WeMakeDevs × FalkorDB).
 Track 1: *Agents That Act on Connected Data*.
 
-- **Demo video:** `<!-- TODO: add demo video link -->`
-- **Live app:** `<!-- TODO: add deployment URL -->`
-- **Repository:** `<!-- TODO: add public repo URL -->`
+- **Demo video:** `https://www.youtube.com/watch?v=YDL6ZGoFmOY`
+- **Live app:** `https://rootcauseagent.streamlit.app`
 
 ---
 
