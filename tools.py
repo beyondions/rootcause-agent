@@ -7,6 +7,7 @@ from falkordb import FalkorDB
 load_dotenv()
 
 GRAPH_NAME = os.getenv("FALKORDB_GRAPH", "incidents")
+# Frozen clock so the synthetic deploys always count as "recent".
 NOW = 121
 
 client = FalkorDB(host=os.getenv("FALKORDB_HOST", "localhost"),
@@ -43,6 +44,7 @@ def _upstream(service):
     return {r[0] for r in rows}
 
 
+# Two simple traversals + Python sets: easy to verify by hand, cheap at this size.
 def find_root_cause():
     alerting = {a["service"] for a in get_active_alerts()}
     candidates = []

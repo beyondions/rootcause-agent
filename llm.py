@@ -10,6 +10,7 @@ DEFAULT_MODELS = "openai/gpt-oss-120b,openai/gpt-oss-20b,qwen/qwen3.8-27b"
 MODELS = [m.strip() for m in os.getenv("MODELS", DEFAULT_MODELS).split(",") if m.strip()]
 RETRIES = 4
 
+# Free-tier quota is per model per day: when one runs out, use the next in MODELS.
 _exhausted = set()
 
 

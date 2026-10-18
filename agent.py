@@ -289,6 +289,7 @@ def code_first_line(kind, facts):
     return f"{root} is the root cause."
 
 
+# The first line is built from graph results if the model's doesn't answer the question.
 def fix_first_line(question, result):
     kind = question_kind(question)
     if kind == "yes_no":
@@ -323,6 +324,7 @@ def past_fix_line(result):
     return f"Suggested fix: {inc['runbook']} ({source})"
 
 
+# The fix is always the runbook from the graph, never LLM wording.
 def fix_suggested_fix(result):
     if not result["root_cause"]:
         return result
@@ -499,6 +501,7 @@ def dependency_sentence(c):
             "if it's failing, it may be a monitoring gap.")
 
 
+# A service that isn't alerting is answered from the graph only, never blamed on the outage.
 def service_check(question, named, alerts, verbose=True):
     alert_by_service = {}
     for a in alerts:
@@ -550,6 +553,7 @@ def investigate(question, verbose=True):
     return result
 
 
+# Repeat questions in a demo cost 0 tokens; fallback answers aren't cached.
 _answer_cache = {}
 
 
